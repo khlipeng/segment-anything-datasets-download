@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"strconv"
@@ -50,17 +51,12 @@ func httpRangeCheck(url string) (int64, error) {
 
 	defer resp.Body.Close()
 
-	contentRange := resp.Header.Get("Content-Range")
-	rangStr := strings.Split(contentRange, "/")
-	if len(rangStr) != 2 {
-		return 0, errors.New("not found content fange")
-	}
-	size, _ := strconv.ParseInt(rangStr[1], 10, 64)
-	if size == 0 {
-		return 0, errors.New("不支持 range")
+	hdr, err := ParseHTTPContentRangeHeader(resp.Header.Get("Content-Range"))
+	if err != nil {
+		return 0, err
 	}
 
-	return size, nil
+	return hdr.ContentLength, nil
 }
 
 func (d *downloader) Download(strURL, filename string) error {
@@ -180,25 +176,41 @@ func (d *downloader) downloadPartial(strURL, filename string, rangeStart int64, 
 	if rangeStart >= rangeEnd {
 		return nil
 	}
-	tmpfile := d.getPartFilename(filename, num)
-	req, err := http.NewRequest("GET", strURL, nil)
-	if err != nil {
-		return fmt.Errorf("%s %d 请求错误: %s", filename, num, err)
-	}
 
+	tmpfile := d.getPartFilename(filename, num)
 	if info, err := os.Stat(tmpfile); err == nil {
 		if info.Size() == rangeEnd-rangeStart+1 {
 			return nil
 		}
 	}
 
-	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", rangeStart, rangeEnd))
+	rangeStr := fmt.Sprintf("bytes=%d-%d", rangeStart, rangeEnd)
+	u, _ := url.Parse(strURL)
+	q := u.Query()
+	q.Set("X-Param-Header-Range", rangeStr)
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequest("GET", u.String(), nil)
+	if err != nil {
+		return fmt.Errorf("%s %d 请求错误: %s", filename, num, err)
+	}
+	req.Header.Set("Range", rangeStr)
+
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("%s %d 请求错误: %s", filename, num, err)
 	}
 
 	defer resp.Body.Close()
+
+	hdr, err := ParseHTTPContentRangeHeader(resp.Header.Get("Content-Range"))
+	if err != nil {
+		return err
+	}
+
+	if hdr.Start != rangeStart || hdr.End != rangeEnd {
+		return fmt.Errorf("content range 校验失败: %s  %s", resp.Header.Get("Content-Range"), req.Header.Get("Range"))
+	}
 
 	partFile, err := os.OpenFile(tmpfile, os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0666)
 	if err != nil {
@@ -274,4 +286,49 @@ func (d *downloader) newBar(filename string, length int64) *progressbar.Progress
 			BarEnd:        "]",
 		}),
 	)
+}
+
+func ParseHTTPContentRangeHeader(contentRange string) (*ContentRange, error) {
+	if len(contentRange) == 0 {
+		return nil, fmt.Errorf("parse error:not found Content-Range header")
+	}
+
+	contentRange = strings.TrimPrefix(contentRange, "bytes ")
+
+	crs := strings.Split(contentRange, "/")
+
+	if len(crs) != 2 {
+		return nil, fmt.Errorf("parse error: Content-Range header: bytes %s", contentRange)
+	}
+
+	length, err := strconv.ParseInt(crs[1], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("parse error: Content-Range header: %s", contentRange)
+	}
+
+	dash := strings.IndexByte(crs[0], '-')
+	if dash <= 0 {
+		return nil, fmt.Errorf("parse error: Content-Range header: %s", contentRange)
+	}
+
+	start, err := strconv.ParseInt(crs[0][:dash], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("parse error: Content-Range header: %s", contentRange)
+	}
+	end, err := strconv.ParseInt(crs[0][dash+1:], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("parse error: Content-Range header: %s", contentRange)
+	}
+
+	return &ContentRange{
+		Start:         start,
+		End:           end,
+		ContentLength: length,
+	}, nil
+}
+
+type ContentRange struct {
+	Start         int64
+	End           int64
+	ContentLength int64
 }
