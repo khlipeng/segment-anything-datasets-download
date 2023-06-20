@@ -13,7 +13,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/k0kubun/go-ansi"
 	"github.com/khlipeng/segment-anything-datasets-download/pkg/utils"
 	"github.com/schollz/progressbar/v3"
 )
@@ -107,12 +106,13 @@ func (d *downloader) multiDownload(strURL, filename string, contentLen int64) er
 	bar := d.newBar(filename, contentLen)
 	partNum := int(math.Ceil(float64(contentLen) / float64(d.chunkSize)))
 	fmt.Printf("%s 准备下载 partNum: %d\n", filename, partNum)
+	bar.RenderBlank()
 
 	// 创建部分文件的存放目录
 	partDir := d.getPartDir(filename)
 	os.Mkdir(partDir, 0777)
 	var wg sync.WaitGroup
-	wg.Add(int(partNum))
+	wg.Add(partNum)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -167,7 +167,7 @@ func (d *downloader) multiDownload(strURL, filename string, contentLen int64) er
 	}
 
 	wg.Wait()
-	fmt.Println("\n\nmerge")
+	bar.Close()
 	err := d.merge(filename, partNum, contentLen)
 	if err != nil {
 		return err
@@ -208,9 +208,11 @@ func (d *downloader) downloadPartial(strURL, filename string, rangeStart int64, 
 
 	len, err := io.Copy(partFile, resp.Body)
 	if err != nil {
-		return fmt.Errorf("%s %d 文件copy异常: io.copy error %s", filename, num, err)
+		os.Remove(tmpfile)
+		return fmt.Errorf("%s %d 文件copy异常: io.copy (%d/%d) error %s", filename, num, len, resp.ContentLength, err)
 	}
 	if len != rangeEnd-rangeStart+1 {
+		os.Remove(tmpfile)
 		return fmt.Errorf("%s %d 文件copy异常: 大小不一致", filename, num)
 	}
 	return nil
@@ -257,13 +259,13 @@ func (d *downloader) getPartFilename(filename string, partNum int) string {
 }
 
 func (d *downloader) newBar(filename string, length int64) *progressbar.ProgressBar {
-	return progressbar.NewOptions(
-		int(length),
-		progressbar.OptionSetWriter(ansi.NewAnsiStdout()),
+	return progressbar.NewOptions64(
+		length,
 		progressbar.OptionEnableColorCodes(true),
 		progressbar.OptionShowBytes(true),
 		progressbar.OptionSetWidth(50),
-		progressbar.OptionSetDescription(filename+" downloading..."),
+		progressbar.OptionShowCount(),
+		progressbar.OptionSetDescription(filename),
 		progressbar.OptionSetTheme(progressbar.Theme{
 			Saucer:        "[green]=[reset]",
 			SaucerHead:    "[green]>[reset]",
