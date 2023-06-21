@@ -2,7 +2,10 @@ module github.com/khlipeng/segment-anything-datasets-download
 
 go 1.20
 
-require github.com/schollz/progressbar/v3 v3.13.1
+require (
+	github.com/davecgh/go-spew v1.1.1
+	github.com/schollz/progressbar/v3 v3.13.1
+)
 
 require (
 	github.com/mattn/go-runewidth v0.0.14 // indirect

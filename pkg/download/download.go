@@ -7,12 +7,12 @@ import (
 	"io"
 	"math"
 	"net/http"
-	"net/url"
 	"os"
 	"path"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/khlipeng/segment-anything-datasets-download/pkg/utils"
 	"github.com/schollz/progressbar/v3"
@@ -87,7 +87,7 @@ func (d *downloader) Download(strURL, filename string) error {
 		return errors.New(filename + " 不支持 Range")
 	}
 
-	fmt.Println(filename, "size", utils.FormatFileSize(contentLength))
+	fmt.Println(filename, "size", contentLength, utils.FormatFileSize(contentLength))
 	if info, err := os.Stat(saveDir + "/" + filename); err == nil {
 		if info.Size() == contentLength {
 			fmt.Printf("%s 文件已经存在\n", filename)
@@ -185,12 +185,12 @@ func (d *downloader) downloadPartial(strURL, filename string, rangeStart int64, 
 	}
 
 	rangeStr := fmt.Sprintf("bytes=%d-%d", rangeStart, rangeEnd)
-	u, _ := url.Parse(strURL)
-	q := u.Query()
-	q.Set("X-Param-Header-Range", rangeStr)
-	u.RawQuery = q.Encode()
+	// u, _ := url.Parse(strURL)
+	// q := u.Query()
+	// q.Set("X-Param-Header-Range", rangeStr)
+	// u.RawQuery = q.Encode()
 
-	req, err := http.NewRequest("GET", u.String(), nil)
+	req, err := http.NewRequest("GET", strURL, nil)
 	if err != nil {
 		return fmt.Errorf("%s %d 请求错误: %s", filename, num, err)
 	}
@@ -277,6 +277,7 @@ func (d *downloader) newBar(filename string, length int64) *progressbar.Progress
 		progressbar.OptionShowBytes(true),
 		progressbar.OptionSetWidth(50),
 		progressbar.OptionShowCount(),
+		progressbar.OptionThrottle(1*time.Second),
 		progressbar.OptionSetDescription(filename),
 		progressbar.OptionSetTheme(progressbar.Theme{
 			Saucer:        "[green]=[reset]",
