@@ -25,9 +25,6 @@ type downloader struct {
 	tmpDir    string
 }
 
-var saveDir = "./data"
-var tmpDir = "./tmp"
-
 func NewDownloader(taskNum int, chunkSize int64, saveDir string, tmpDir string) *downloader {
 	return &downloader{
 		taskNum:   taskNum,
@@ -88,7 +85,7 @@ func (d *downloader) Download(strURL, filename string) error {
 	}
 
 	fmt.Println(filename, "size", contentLength, utils.FormatFileSize(contentLength))
-	if info, err := os.Stat(saveDir + "/" + filename); err == nil {
+	if info, err := os.Stat(d.saveDir + "/" + filename); err == nil {
 		if info.Size() == contentLength {
 			fmt.Printf("%s 文件已经存在\n", filename)
 			return nil
@@ -231,7 +228,7 @@ func (d *downloader) downloadPartial(strURL, filename string, rangeStart int64, 
 }
 
 func (d *downloader) merge(filename string, partNum int, contentLen int64) error {
-	filepath := saveDir + "/" + filename
+	filepath := d.saveDir + "/" + filename
 	destFile, err := os.OpenFile(filepath, os.O_CREATE|os.O_WRONLY, 0666)
 	if err != nil {
 		return err
@@ -261,7 +258,7 @@ func (d *downloader) merge(filename string, partNum int, contentLen int64) error
 
 // getPartDir 部分文件存放的目录
 func (d *downloader) getPartDir(filename string) string {
-	return tmpDir + "/" + strings.ReplaceAll(filename, ".", "_")
+	return d.tmpDir + "/" + strings.ReplaceAll(filename, ".", "_")
 }
 
 // getPartFilename 构造部分文件的名字
